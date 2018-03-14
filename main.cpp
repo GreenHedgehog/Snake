@@ -5,6 +5,7 @@
 #include <iostream>
 #include <memory>
 #include <chrono>
+#include <string_view>
 
 // local namespace
 namespace {
@@ -32,7 +33,7 @@ enum Direction {
 class RandomCoordinatesGenerator {
 public:
 	RandomCoordinatesGenerator(unsigned short width, unsigned short height) noexcept :
-		_w_distribution{1, width}, _h_distribution{1, height}
+		_w_distribution{1, width - 1}, _h_distribution{1, height - 1}
 	{
 		std::random_device random_device;
 		_random_generator = std::mt19937(random_device());
@@ -124,6 +125,10 @@ protected:
 		_was_cleaned = false;
 	}
 
+	void print_on_center(std::string_view msg) const noexcept {
+		mvprintw(_height / 2, (_width / 2) - (msg.size() / 2), msg.data());
+	}
+
 private:
 	unsigned short & _width;
 	unsigned short & _height;
@@ -148,17 +153,22 @@ public:
 
 	void render() noexcept override {
 		clear_once();
-		auto now = std::chrono::system_clock::now();
-		if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
-			_previous_render = now;
-			_snake->render();
+		if (!is_paused) {
+			auto now = std::chrono::system_clock::now();
+			if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
+				_previous_render = now;
+				_snake->render();
 
-			draw_score();
-			draw_food();
-			if (check_food()) {
-				_score++;
-				generate_food();
+				draw_food_trace();
+				draw_score();
+				draw_food();
+				if (check_food()) {
+					_score++;
+					generate_food();
+				}
 			}
+		} else {
+			print_on_center("game was paused, press p to unpause");
 		}
 	}
 
@@ -179,6 +189,9 @@ public:
 			case 'q':
 				on_leave();
 				status = MENU;
+				break;
+			case 'p':
+				is_paused = !is_paused;
 				break;
 			default:
 				break;
@@ -204,7 +217,13 @@ private:
 		mvprintw(1, get_width() / 2, "score %d", _score);
 	}
 
+	void draw_food_trace() {
+		mvprintw(1, 2, "x: %d", _food.first);
+		mvprintw(2, 2, "y: %d", _food.second);
+	}
+
 	unsigned short _score{0};
+	bool is_paused{false};
 	std::chrono::system_clock::time_point _previous_render;
 	std::pair<unsigned short, unsigned short> _food;
 	RandomCoordinatesGenerator* _coords_generator;
@@ -269,7 +288,7 @@ public:
 
 	void render() noexcept override {
 		clear_once();
-		mvprintw(get_height() / 2, get_width() / 2, "print q to back in menu");
+		print_on_center("print q to back in menu");
 	}
 
 	void input_handler(int input, AppStatus& status) noexcept override {
