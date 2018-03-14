@@ -4,14 +4,25 @@
 #include <string>
 #include <iostream>
 #include <memory>
+#include <chrono>
 
 namespace {
-	enum AppStatus {
-		MENU,
-		GAME,
-		INFO,
-		EXIT
-	};
+
+enum AppStatus {
+	MENU,
+	GAME,
+	INFO,
+	EXIT
+};
+
+// In this style 'cause ncurse already has function 'UP'
+enum Direction {
+	Up,
+	Right,
+	Down,
+	Left
+};
+
 }
 
 /*
@@ -36,6 +47,42 @@ private:
 	std::mt19937 _random_generator;
 	std::uniform_int_distribution<unsigned short> _w_distribution;
 	std::uniform_int_distribution<unsigned short> _h_distribution;
+};
+
+/*
+ * 		Snake
+ */
+
+class Snake {
+public:
+	Snake(unsigned short init_x, unsigned short init_y, Direction direction) :
+		_head_x{init_x}, _head_y{init_y}, _direction{direction} {}
+
+	void setDirection(Direction direction) noexcept {
+		_direction = direction;
+	}
+
+	void render() noexcept {
+		clear();
+		switch (_direction) {
+			case Up:
+				mvprintw(_head_y--, _head_x, _body_fill);
+				break;
+			case Right:
+				mvprintw(_head_y, _head_x++, _body_fill);
+				break;
+			case Down:
+				mvprintw(_head_y++, _head_x, _body_fill);
+				break;
+			case Left:
+				mvprintw(_head_y, _head_x--, _body_fill);
+				break;
+		}
+	}
+private:
+	const char * _body_fill{"@"};
+	unsigned short _head_x, _head_y;
+	Direction _direction;
 };
 
 /*
@@ -82,16 +129,50 @@ private:
  */
 class Game : public Screen {
 public:
-	Game(unsigned short &width, unsigned short &height) : Screen(width, height) {}
+	Game(unsigned short &width, unsigned short &height) : Screen(width, height) {
+		_snake = new Snake{10, 10, Right};
+	}
+
+	~Game() override {
+		delete _snake;
+	}
 
 	void render() noexcept override {
-
+		clear_once();
+		auto now = std::chrono::system_clock::now();
+		if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
+			_previous_render = now;
+			_snake->render();
+		}
 	}
 
 	void input_handler(int input, AppStatus& status) noexcept override {
-
+		switch (input) {
+			case KEY_UP:
+				_snake->setDirection(Up);
+				break;
+			case KEY_RIGHT:
+				_snake->setDirection(Right);
+				break;
+			case KEY_DOWN:
+				_snake->setDirection(Down);
+				break;
+			case KEY_LEFT:
+				_snake->setDirection(Left);
+				break;
+			case 'q':
+				on_leave();
+				status = MENU;
+				break;
+			default:
+				break;
+		}
 	}
 
+private:
+
+	std::chrono::system_clock::time_point _previous_render;
+	Snake* _snake;
 };
 
 /*	
