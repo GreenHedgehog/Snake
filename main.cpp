@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 
+// local namespace
 namespace {
 
 enum AppStatus {
@@ -23,7 +24,7 @@ enum Direction {
 	Left
 };
 
-}
+} // local namespace
 
 /*
  * 		RandomCoordinatesGenerator
@@ -79,6 +80,11 @@ public:
 				break;
 		}
 	}
+
+	std::pair<unsigned short, unsigned short> getHead() const noexcept {
+		return {_head_x, _head_y};
+	};
+
 private:
 	const char * _body_fill{"@"};
 	unsigned short _head_x, _head_y;
@@ -130,7 +136,10 @@ private:
 class Game : public Screen {
 public:
 	Game(unsigned short &width, unsigned short &height) : Screen(width, height) {
+		_coords_generator = new RandomCoordinatesGenerator(width, height);
 		_snake = new Snake{10, 10, Right};
+
+		generate_food();
 	}
 
 	~Game() override {
@@ -143,6 +152,13 @@ public:
 		if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
 			_previous_render = now;
 			_snake->render();
+
+			draw_score();
+			draw_food();
+			if (check_food()) {
+				_score++;
+				generate_food();
+			}
 		}
 	}
 
@@ -170,8 +186,28 @@ public:
 	}
 
 private:
+	void generate_food() {
+		auto [pos_x, pos_y] = _coords_generator->get();
+		_food = {pos_x, pos_y};
+	}
 
+	void draw_food() {
+		mvprintw(_food.second, _food.first, "$");
+	}
+
+	bool check_food() {
+		auto [head_x, head_y] = _snake->getHead();
+		return (_food.first == head_x && _food.second == head_y);
+	}
+
+	void draw_score() {
+		mvprintw(1, get_width() / 2, "score %d", _score);
+	}
+
+	unsigned short _score{0};
 	std::chrono::system_clock::time_point _previous_render;
+	std::pair<unsigned short, unsigned short> _food;
+	RandomCoordinatesGenerator* _coords_generator;
 	Snake* _snake;
 };
 
@@ -251,11 +287,16 @@ public:
 
 class SnakeGame {
 public:
-	SnakeGame() :
-		_menu{new Menu(_width, _height)},
-		_info{new Info(_width, _height)},
-		_game{new Game(_width, _height)}
-	{}
+	SnakeGame() {
+		// Init screen
+		initscr();
+		// Get current size of terminal window
+		getmaxyx(stdscr, _height, _width);
+
+		_menu = new Menu(_width, _height);
+		_info = new Info(_width, _height);
+		_game = new Game(_width, _height);
+	}
 
 	~SnakeGame() {
 		delete _game;
@@ -270,8 +311,6 @@ public:
 private:
 
 	void init() {
-		// Init screen
-		initscr();
 		// Disable cursor display
 		curs_set(0);
 		// Make available arrows
@@ -280,8 +319,6 @@ private:
 		noecho();
 		// Input in no-blocking regime
 		nodelay(stdscr, true);
-		// Get current size of terminal window
-		getmaxyx(stdscr, _height, _width);
 
 		// Make available colors
 		start_color();

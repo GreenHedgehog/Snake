@@ -1,2 +1,2 @@
 # Snake
-A small console game-snake for linux, written in modern c ++ with the library ncurse.
+A small console game-snake for linux, written on modern c ++ with the library ncurse.
