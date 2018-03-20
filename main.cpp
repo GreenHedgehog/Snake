@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <string_view>
+#include <algorithm>
 
 // local namespace
 namespace {
@@ -25,6 +26,8 @@ enum Direction {
 	Left
 };
 
+typedef std::pair<unsigned short, unsigned short> coordinates;	// first = x; second = y;
+
 } // local namespace
 
 /*
@@ -33,13 +36,13 @@ enum Direction {
 class RandomCoordinatesGenerator {
 public:
 	RandomCoordinatesGenerator(unsigned short width, unsigned short height) noexcept :
-		_w_distribution{1, width - 1}, _h_distribution{1, height - 1}
+		_w_distribution(1, width - 1), _h_distribution(1, height - 1)
 	{
 		std::random_device random_device;
 		_random_generator = std::mt19937(random_device());
 	}
 
-	std::pair<unsigned short, unsigned short> get() noexcept {
+	coordinates get() noexcept {
 		return {
 			_w_distribution(_random_generator),
 			_h_distribution(_random_generator)
@@ -57,8 +60,10 @@ private:
 
 class Snake {
 public:
-	Snake(unsigned short init_x, unsigned short init_y, Direction direction) :
-		_head_x{init_x}, _head_y{init_y}, _direction{direction} {}
+	Snake(unsigned short init_x, unsigned short init_y, Direction direction) : _direction{direction} {
+		_body_parts.reserve(100);
+		_body_parts.emplace_back(init_x, init_y);
+	}
 
 	void setDirection(Direction direction) noexcept {
 		_direction = direction;
@@ -66,29 +71,60 @@ public:
 
 	void render() noexcept {
 		clear();
+		move_body();
+		draw_body();
+	}
+
+	coordinates getHead() const noexcept {
+		return _body_parts[0];
+	};
+
+	void grow_up() {
+		_will_be_grown = true;
+	}
+
+private:
+	void draw_body() {
+		std::for_each(_body_parts.begin(), _body_parts.end(),
+			      [this](const std::pair<unsigned short, unsigned short>& part) {
+				      mvprintw(part.second, part.first, _body_fill);
+			      }
+		);
+	}
+
+	void move_body() {
+		coordinates last;
+		if (_will_be_grown) {
+			last = _body_parts.back();
+		}
+		for (auto it = _body_parts.rbegin(), end = _body_parts.rend() - 1; it != end; ++it) {
+			*it = *(it + 1);
+		}
+		if (_will_be_grown) {
+			_body_parts.emplace_back(last);
+			_will_be_grown = false;
+		}
 		switch (_direction) {
 			case Up:
-				mvprintw(_head_y--, _head_x, _body_fill);
+				_body_parts[0].second--;
 				break;
 			case Right:
-				mvprintw(_head_y, _head_x++, _body_fill);
+				_body_parts[0].first++;
 				break;
 			case Down:
-				mvprintw(_head_y++, _head_x, _body_fill);
+				_body_parts[0].second++;
 				break;
 			case Left:
-				mvprintw(_head_y, _head_x--, _body_fill);
+				_body_parts[0].first--;
+				break;
+			default:
 				break;
 		}
 	}
 
-	std::pair<unsigned short, unsigned short> getHead() const noexcept {
-		return {_head_x, _head_y};
-	};
-
-private:
+	bool _will_be_grown{false};
+	std::vector<coordinates> _body_parts;
 	const char * _body_fill{"@"};
-	unsigned short _head_x, _head_y;
 	Direction _direction;
 };
 
@@ -157,13 +193,16 @@ public:
 			auto now = std::chrono::system_clock::now();
 			if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
 				_previous_render = now;
+
 				_snake->render();
 
 				draw_food_trace();
 				draw_score();
 				draw_food();
+
 				if (check_food()) {
 					_score++;
+					_snake->grow_up();
 					generate_food();
 				}
 			}
@@ -200,8 +239,7 @@ public:
 
 private:
 	void generate_food() {
-		auto [pos_x, pos_y] = _coords_generator->get();
-		_food = {pos_x, pos_y};
+		_food =  _coords_generator->get();
 	}
 
 	void draw_food() {
@@ -209,8 +247,7 @@ private:
 	}
 
 	bool check_food() {
-		auto [head_x, head_y] = _snake->getHead();
-		return (_food.first == head_x && _food.second == head_y);
+		return _food == _snake->getHead();
 	}
 
 	void draw_score() {
@@ -225,7 +262,7 @@ private:
 	unsigned short _score{0};
 	bool is_paused{false};
 	std::chrono::system_clock::time_point _previous_render;
-	std::pair<unsigned short, unsigned short> _food;
+	coordinates _food;
 	RandomCoordinatesGenerator* _coords_generator;
 	Snake* _snake;
 };
