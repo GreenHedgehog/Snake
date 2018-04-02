@@ -18,6 +18,12 @@ enum AppStatus {
 	EXIT
 };
 
+enum GameStatus {
+	RUN,
+	PAUSE,
+	GAME_OVER
+};
+
 // In this style 'cause ncurse already has function 'UP'
 enum Direction {
 	Up,
@@ -69,6 +75,18 @@ public:
 		_direction = direction;
 	}
 
+	const Direction & getDirection() const {
+		return _direction;
+	}
+
+	void reset() noexcept {
+		_body_parts.resize(1);
+	}
+
+	void init(unsigned short init_x, unsigned short init_y) {
+		_body_parts.emplace_back(init_x, init_y);
+	}
+
 	void render() noexcept {
 		clear();
 		move_body();
@@ -79,8 +97,24 @@ public:
 		return _body_parts[0];
 	};
 
-	void grow_up() {
+	void grow_up() noexcept {
 		_will_be_grown = true;
+	}
+
+	bool is_part_of_body(const coordinates& coords) {
+		return std::any_of(_body_parts.cbegin(), _body_parts.cend(),
+				   [&coords](const coordinates& part) {
+					   return part == coords;
+				   }
+		);
+	}
+
+	bool check_self_abuse() {
+		return std::any_of(_body_parts.cbegin() + 1, _body_parts.cend(),
+				   [this](const coordinates& part) {
+					   return part == _body_parts.front();
+				   }
+		);
 	}
 
 private:
@@ -185,61 +219,92 @@ public:
 
 	~Game() override {
 		delete _snake;
+		delete _coords_generator;
 	}
 
 	void render() noexcept override {
 		clear_once();
-		if (!is_paused) {
-			auto now = std::chrono::system_clock::now();
-			if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > 100 ) {
-				_previous_render = now;
+		switch (_game_status) {
+			case RUN:
+			{
+				auto now = std::chrono::system_clock::now();
+				if ( std::chrono::duration_cast<std::chrono::milliseconds>(now - _previous_render).count() > _speed ) {
+					_previous_render = now;
 
-				_snake->render();
+					_snake->render();
 
-				draw_food_trace();
-				draw_score();
-				draw_food();
+					draw_food_trace();
+					draw_score();
+					draw_food();
 
-				if (check_food()) {
-					_score++;
-					_snake->grow_up();
-					generate_food();
+					if (check_food()) {
+						_score++;
+						_speed -= (_speed > 20) ? 5 : 0;
+						_snake->grow_up();
+						generate_food();
+					}
+
+					if (check_collision() || _snake->check_self_abuse()) {
+						_game_status = GAME_OVER;
+					}
 				}
+				break;
 			}
-		} else {
-			print_on_center("game was paused, press p to unpause");
-		}
-	}
-
-	void input_handler(int input, AppStatus& status) noexcept override {
-		switch (input) {
-			case KEY_UP:
-				_snake->setDirection(Up);
+			case PAUSE:
+				print_on_center("game paused, press p to unpause");
 				break;
-			case KEY_RIGHT:
-				_snake->setDirection(Right);
-				break;
-			case KEY_DOWN:
-				_snake->setDirection(Down);
-				break;
-			case KEY_LEFT:
-				_snake->setDirection(Left);
-				break;
-			case 'q':
-				on_leave();
-				status = MENU;
-				break;
-			case 'p':
-				is_paused = !is_paused;
+			case GAME_OVER:
+				print_on_center("GAME OVER. Press r to restart or q to quit in menu");
 				break;
 			default:
 				break;
 		}
 	}
 
+	void input_handler(int input, AppStatus& status) noexcept override {
+		switch (input) {
+			case KEY_UP:
+				if (_snake->getDirection() != Down)
+					_snake->setDirection(Up);
+				break;
+			case KEY_RIGHT:
+				if (_snake->getDirection() != Left)
+					_snake->setDirection(Right);
+				break;
+			case KEY_DOWN:
+				if (_snake->getDirection() != Up)
+					_snake->setDirection(Down);
+				break;
+			case KEY_LEFT:
+				if (_snake->getDirection() != Right)
+					_snake->setDirection(Left);
+				break;
+			case 'q':
+				on_leave();
+				status = MENU;
+				break;
+			case 'p':
+				_game_status = (_game_status == PAUSE) ? RUN : PAUSE;
+				break;
+			case 'r':
+				restart();
+				_game_status = PAUSE;
+			default:
+				break;
+		}
+	}
+
 private:
+	bool check_collision() {
+		auto [pos_x, pos_y] = _snake->getHead();
+		return !(pos_x > 0 && pos_y > 0 && pos_x < get_width() && pos_y < get_height());
+	}
+
 	void generate_food() {
 		_food =  _coords_generator->get();
+		while (_snake->is_part_of_body(_food)) {
+			_food = _coords_generator->get();
+		}
 	}
 
 	void draw_food() {
@@ -259,12 +324,17 @@ private:
 		mvprintw(2, 2, "y: %d", _food.second);
 	}
 
+	void restart() noexcept {
+		_snake->reset();
+	}
+
+	unsigned short _speed{150};
 	unsigned short _score{0};
-	bool is_paused{false};
 	std::chrono::system_clock::time_point _previous_render;
 	coordinates _food;
 	RandomCoordinatesGenerator* _coords_generator;
 	Snake* _snake;
+	GameStatus _game_status{RUN};
 };
 
 /*	
